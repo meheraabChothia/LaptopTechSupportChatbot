@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Dashboard</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Roboto', sans-serif, monospace;
+            font-family: 'Fredoka', sans-serif;
+        }
+
+        body {
+            background: rgb(36, 0, 0);
+            background: linear-gradient(90deg, rgba(36, 0, 0, 0.7486344879748774) 0%, rgba(121, 9, 104, 0.8410714627647934) 49%, #00c2ff98 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            animation: fadeIn 0.5s;
+            height: 90vh;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        #chat-display {
+            height: 80%;
+            border: 1px solid #ccc;
+            padding: 10px;
+            overflow-y: auto;
+            border-radius: 5px;
+            background-color: rgba(255, 255, 255, 0.95);
+            margin-bottom: 20px;
+        }
+
+        .user-message {
+            background-color: rgba(143, 8, 111, 0.1);
+            border-radius: 20px;
+            padding: 10px 15px;
+            margin: 5px 0 5px auto;
+            text-align: right;
+            width: fit-content;
+            max-width: 70%;
+        }
+
+        .agent-message {
+            background-color: rgba(0, 194, 255, 0.1);
+            border-radius: 20px;
+            padding: 10px 15px;
+            margin: 5px auto 5px 0;
+            text-align: left;
+            width: fit-content;
+            max-width: 70%;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        h4 {
+            color: #8f086f;
+            margin-bottom: 15px;
+        }
+
+        button {
+            background-color: #8f086f;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        .logout-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 8px 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .logout-btn:hover {
+            background-color: #c82333;
+        }
+
+        #user-input {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            align-items: center;
+        }
+
+        #user-input input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            outline: none;
+        }
+
+        #user-input button {
+            padding: 10px 25px;
+            margin-left: 10px;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+        }
+
+        .btn-warning:hover {
+            background-color: #e0a800;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+        }
+
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+        }
+
+        .btn-success:hover {
+            background-color: #218838;
+        }
+
+        .pdf-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            padding: 8px 20px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        .pdf-button:hover {
+            background-color: #0056b3;
+        }
+
+        .pdf-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h4>Agent Dashboard</h4>
+            <div>
+                <button class="btn btn-warning mr-2" onclick="endConversation()">End Conversation</button>
+                <button class="btn btn-primary mr-2" onclick="newChat()">New Chat</button>
+                <button class="logout-btn" onclick="logout()">Logout</button>
+            </div>
+        </div>
+        <div id="chat-display"></div>
+        <div id="user-input" class="input-group">
+            <input type="text" id="message-input" class="form-control" placeholder="Type your message here...">
+            <div class="input-group-append">
+                <button class="btn btn-success" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let connected_user = null;
+
+        // Login as agent when page loads
+        socket.emit('login', { username: 'agent' });
+
+        socket.on('message', function(msg) {
+            const chatDisplay = document.getElementById('chat-display');
+            const messageDiv = document.createElement('div');
+            // Handle system messages differently
+            if (msg.startsWith('System:')) {
+                messageDiv.className = 'system-message';
+                messageDiv.style.textAlign = 'center';
+                messageDiv.style.color = '#0056b3';
+                messageDiv.style.fontWeight = 'bold';
+                messageDiv.style.padding = '10px';
+                messageDiv.style.margin = '10px 0';
+                messageDiv.style.backgroundColor = 'rgba(0, 86, 179, 0.1)';
+                messageDiv.style.borderRadius = '10px';
+            } else {
+                messageDiv.className = msg.startsWith('User:') ? 'user-message' : 'agent-message';
+            }
+            messageDiv.textContent = msg;
+            chatDisplay.appendChild(messageDiv);
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+        });
+
+        socket.on('agent_connected', function(data) {
+            console.log('Agent connected event received:', data);
+            const chatDisplay = document.getElementById('chat-display');
+            chatDisplay.innerHTML = '';
+            
+            // Store PDF path in a variable accessible to the agent
+            window.currentPdfPath = data.pdf_path;
+            
+            // Add PDF path information and button at the top if available
+            if (data.pdf_path && data.pdf_path.length > 0) {
+                console.log('PDF path found:', data.pdf_path);
+                const pdfContainer = document.createElement('div');
+                pdfContainer.className = 'system-message';
+                pdfContainer.style.textAlign = 'center';
+                pdfContainer.style.color = '#0056b3';
+                pdfContainer.style.fontWeight = 'bold';
+                pdfContainer.style.padding = '10px';
+                pdfContainer.style.margin = '10px 0';
+                pdfContainer.style.backgroundColor = 'rgba(0, 86, 179, 0.1)';
+                pdfContainer.style.borderRadius = '10px';
+                
+                // Add PDF path text
+                const pdfInfo = document.createElement('div');
+                pdfInfo.textContent = `User's Manual: ${data.pdf_path.join(', ')}`;
+                pdfContainer.appendChild(pdfInfo);
+                
+                // Add Open PDF button
+                const pdfButton = document.createElement('button');
+                pdfButton.className = 'pdf-button';
+                pdfButton.textContent = 'Open Manual';
+                pdfButton.onclick = () => {
+                    // Open the first PDF in the array in a new window
+                    if (window.currentPdfPath && window.currentPdfPath.length > 0) {
+                        window.open(window.currentPdfPath[0], '_blank');
+                    }
+                };
+                pdfContainer.appendChild(pdfButton);
+                
+                chatDisplay.appendChild(pdfContainer);
+            } else {
+                console.log('No PDF path found in data:', data);
+                const noPdfInfo = document.createElement('div');
+                noPdfInfo.className = 'system-message';
+                noPdfInfo.style.textAlign = 'center';
+                noPdfInfo.style.color = '#dc3545';
+                noPdfInfo.style.padding = '10px';
+                noPdfInfo.style.margin = '10px 0';
+                noPdfInfo.style.backgroundColor = 'rgba(220, 53, 69, 0.1)';
+                noPdfInfo.style.borderRadius = '10px';
+                noPdfInfo.textContent = 'No manual associated with this conversation';
+                chatDisplay.appendChild(noPdfInfo);
+            }
+            
+            // Display conversation history
+            data.conversation_history.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                // Skip system messages
+                if (entry.role === 'system') {
+                    return;
+                }
+                
+                messageDiv.className = entry.role === 'user' ? 'user-message' : 'agent-message';
+                
+                // Format the message content
+                const formattedContent = entry.content
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                
+                messageDiv.innerHTML = `${entry.role === 'user' ? 'User: ' : 'Bot: '}${formattedContent}`;
+                chatDisplay.appendChild(messageDiv);
+            });
+            
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+        });
+
+        function sendMessage() {
+            const messageInput = document.getElementById('message-input');
+            const message = messageInput.value.trim();
+            
+            if (message !== '') {
+                socket.emit('message', { username: 'agent', message: message });
+                // Display agent's message in their own chat window
+                const chatDisplay = document.getElementById('chat-display');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'agent-message';
+                messageDiv.textContent = `Agent: ${message}`;
+                chatDisplay.appendChild(messageDiv);
+                chatDisplay.scrollTop = chatDisplay.scrollHeight;
+                messageInput.value = '';
+            }
+        }
+
+        // Add event listener for Enter key
+        document.getElementById('message-input').addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function endConversation() {
+            socket.emit('end_conversation');
+            const chatDisplay = document.getElementById('chat-display');
+            chatDisplay.innerHTML = '';
+            const waitingMessage = document.createElement('div');
+            waitingMessage.className = 'agent-message';
+            waitingMessage.textContent = 'Chat ended. Click "New Chat" to connect with another user.';
+            chatDisplay.appendChild(waitingMessage);
+        }
+
+        async function logout() {
+            try {
+                if (connected_user) {
+                    socket.emit('end_conversation');
+                }
+                await fetch('/logout');
+                window.location.href = '/';
+            } catch (error) {
+                console.error('Error during logout:', error);
+            }
+        }
+
+        function newChat() {
+            // Notify current user if connected
+            if (connected_user) {
+                socket.emit('end_conversation');
+                // Wait a brief moment for the end conversation message to be sent
+                setTimeout(() => {
+                    socket.emit('login', { username: 'agent' });
+                    const chatDisplay = document.getElementById('chat-display');
+                    chatDisplay.innerHTML = '';
+                    const waitingMessage = document.createElement('div');
+                    waitingMessage.className = 'agent-message';
+                    waitingMessage.textContent = 'Waiting for next user...';
+                    chatDisplay.appendChild(waitingMessage);
+                }, 100);
+            } else {
+                socket.emit('login', { username: 'agent' });
+                const chatDisplay = document.getElementById('chat-display');
+                chatDisplay.innerHTML = '';
+                const waitingMessage = document.createElement('div');
+                waitingMessage.className = 'agent-message';
+                waitingMessage.textContent = 'Waiting for next user...';
+                chatDisplay.appendChild(waitingMessage);
+            }
+        }
+    </script>
+</body>
+</html> 
